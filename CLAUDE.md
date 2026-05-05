@@ -54,6 +54,12 @@ CONTEXT UPDATES NEEDED:
 - Project Log: [one paragraph summary for the log]
 - Spec file saved at: [path]"
 
+After generating the report, audit all docs in the ops-toolkit repo 
+and in this Claude project. Identify: (1) any duplication or overlap, 
+(2) any drift between sources of truth, (3) any docs that should be 
+consolidated, split, or retired. Produce a consolidation plan before 
+changing anything.
+
 ---
 
 ## Architecture
