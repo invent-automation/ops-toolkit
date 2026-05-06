@@ -1,14 +1,15 @@
 # Ops Toolkit — Ideas Backlog
 
 ## Active
-- [Phase 1] Supplier Intake Tool — in development
+(nothing — supplier intake deleted; MCP Phase 1 is next)
 
 ## Next up
-(nothing yet)
+- stackabl-mcp Phase 1: atomic read operations (search parts, get BOM, 
+  get vendor, etc.) as MCP tools for Claude sessions
 
 ## Ideas
-- [Phase 2] MCP server wrapping the supplier-intake endpoint so
-  Claude sessions can call `add_supplier` directly as a tool
+- Vendor/supplier write capabilities as MCP tools — let emerge from 
+  observed Phase 1 usage patterns; do not design speculatively
 
 ## Refactors
 - Endpoint-ify the BOM importer's core operation (currently UI-coupled)
@@ -18,5 +19,5 @@
   tools get refactored when next touched
 
 ## Won't do (yet)
-- Bulk supplier import — single-entry + paste-parse covers the
-  realistic volume for Stacklab; revisit only if a real bulk need surfaces
+- Bulk supplier import — single-entry covers the realistic volume for 
+  Stacklab; revisit only if a real bulk need surfaces

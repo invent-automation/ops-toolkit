@@ -1,9 +1,0 @@
-name = "stackabl-supplier-intake"
-main = "index.js"
-compatibility_date = "2024-11-01"
-
-[ai]
-binding = "AI"
-
-# ALIGNI_TOKEN must be added as a secret after first deploy:
-#   npx wrangler secret put ALIGNI_TOKEN

@@ -95,6 +95,10 @@ Worker source code lives at worker/worker.js in this repo.
 ### GraphQL API quirks (discovered in production)
 - Filter values must be inlined into query strings — OperatorScalar type 
   rejects GraphQL String variables ($mpn: String! causes type mismatch)
+- Filter syntax: filters: [{ field: "name", value: { eq: "..." } }]
+  Available operators: eq, gt, lt, gte, lte, in, notIn
+  No contains/cont operator exists — name searches must fetch all records 
+  and filter client-side (in the Worker)
 - errors field on all mutation payloads is a String scalar — query as 
   errors not errors { message }
 - subpartCreate requires the component's revision ID not the part ID 
@@ -105,8 +109,15 @@ Worker source code lives at worker/worker.js in this repo.
 - PartRevisionUpdateInput does not accept an active field
 - partRevisionDelete mutation name is not yet confirmed in production — 
   treat as unverified until tested
+- contactCreate.vendorId is Int (the vendor's legacyId), not a ULID ID —
+  always fetch or pass legacyId when creating a contact for a vendor
+- No contactDeactivate mutation exists and ContactInput has no active field;
+  contactDelete is the only option and is a hard delete
+- ManufacturerCreateInput and VendorCreateInput do not accept address or 
+  phone — these are separate entities (addressCreate / phoneNumberCreate)
+  not yet implemented
 
-### GraphQL operations reference (confirmed working)
+### GraphQL operations reference — parts & BOM (confirmed working)
 - parts(filters) query: lookup by manufacturerPn; returns part ID, 
   partNumber, all revisions with status/active/subparts
 - subpartDelete(subpartId): removes an existing BOM line item
@@ -117,6 +128,28 @@ Worker source code lives at worker/worker.js in this repo.
   (assembly revision) + subpartPartRevisionId (component active revision)
 - partRevisionRelease(partRevisionId, partRevisionReleaseInput): releases 
   a draft; use revisionActive: true to simultaneously set as active
+
+### GraphQL operations reference — vendors, manufacturers & contacts (confirmed working)
+Schema introspected 2026-04-29. All confirmed against live schema.
+- manufacturers(first: N) query: returns nodes { id legacyId name website }
+- vendors(first: N) query: returns nodes { id legacyId name website }
+- vendor(id: ID) query: returns contacts { nodes { id legacyId firstName 
+  lastName email jobPosition canReceivePos canReceiveRfqs } }
+- contacts(first: N) query: returns nodes { id firstName lastName email 
+  jobPosition }
+- manufacturerCreate(manufacturerInput): required name; optional shortName, 
+  website, nextPartNumber, partnumberKey
+- vendorCreate(vendorInput): required name; optional shortName, website, 
+  accountNumber, approvedAt, approvalExpiresAt, currencyId, 
+  defaultPaymentTerms, portalEnabled
+- linecardCreate(linecardInput): links a manufacturer to a vendor; required 
+  manufacturerId (ULID ID) and vendorId (ULID ID)
+- contactCreate(contactInput): required lastName; optional firstName, email, 
+  jobPosition, vendorId (Int — legacyId, not ULID), canReceivePos, 
+  canReceiveRfqs
+- contactDelete(contactId: ID!): hard-deletes a contact; no deactivate exists
+- contactUpdate(contactId: ID!, contactInput: ContactInput!): updates 
+  contact fields (same fields as contactCreate)
 
 ### Custom parameters on Felt parts
 - Thickness (mm): "3" or "4.8" (4.8mm marketed as 5mm)
@@ -130,6 +163,45 @@ Worker source code lives at worker/worker.js in this repo.
 ### Inventory quantity tiers
 - On Hand, Reserved, Allocated, Available
 - Always use Available for calculations (not On Hand)
+
+---
+
+## Cloudflare Worker patterns
+
+### In-memory caching
+Use module-level variables for short-lived caches to avoid hammering the 
+Aligni API on repeated lookups (e.g. typeahead searches). Standard TTL is 
+5 minutes (300,000 ms). Caches are best-effort — they persist across warm 
+isolate reuses but reset on cold start or when the isolate is recycled.
+
+```javascript
+let _cache = null, _cacheAt = 0;
+const CACHE_TTL = 5 * 60 * 1000;
+
+async function getCached(token) {
+  if (_cache && Date.now() - _cacheAt < CACHE_TTL) return _cache;
+  _cache = await fetchFromAligni(token);
+  _cacheAt = Date.now();
+  return _cache;
+}
+```
+
+Bust the cache (set to null) immediately after a create/update mutation so 
+the next read reflects the new record.
+
+### String escaping for inlined GraphQL values
+Since OperatorScalar rejects GraphQL variables, all dynamic values must be 
+string-interpolated into query text. Always escape them first:
+
+```javascript
+function esc(s) {
+  return String(s ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '');
+}
+```
 
 ---
 
