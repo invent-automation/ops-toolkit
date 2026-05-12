@@ -288,6 +288,13 @@ The MCP server exposes Aligni read access to Claude.ai and other MCP clients.
 2. Enter: `https://stackabl-mcp.operations-dae.workers.dev/mcp`
 3. Complete the OAuth consent flow (opens `/authorize` in your browser)
 
+### After deploying MCP changes
+After `wrangler deploy`, Claude.ai needs a tool list refresh before new tools appear:
+1. Open Settings → Integrations → find the stackabl-mcp integration
+2. Trigger a refresh (the "Tools list refreshed" toast confirms it)
+3. **Start a new conversation** — existing conversations cache the tool list from when
+   they were opened and will not pick up new tools even after a refresh
+
 ### Deploying / updating
 ```
 cd workers/stackabl-mcp
@@ -305,6 +312,7 @@ KV namespace `MCP_AUTH` must be created and IDs filled in `wrangler.toml` before
 | `search_vendors` | Vendor name search |
 | `get_vendor` | Full vendor detail with contacts |
 | `search_manufacturers` | Manufacturer name search |
+| `aligni_introspect` | Schema inspection: `describe_type` (type fields/inputs/enums) and `find_in_schema` (substring search across types, queries, mutations). Development-time tool — does not fetch live data. |
 
 ---
 
@@ -314,7 +322,7 @@ KV namespace `MCP_AUTH` must be created and IDs filled in `wrangler.toml` before
 |------|------|-------------|
 | Felt Inventory Dashboard | tools/felt-inventory.html | Live felt inventory with available sqft and linear inch calculations by colour |
 | BOM Importer | tools/bom-importer.html | Bulk import BOM CSVs to Aligni via drag and drop with dry-run preview and release workflow |
-| MCP Server | workers/stackabl-mcp/index.js | Phase 1 read-only MCP server: 6 Aligni tools for Claude.ai |
+| MCP Server | workers/stackabl-mcp/index.js | Phase 1 read-only MCP server: 7 Aligni tools for Claude.ai |
 
 ---
 

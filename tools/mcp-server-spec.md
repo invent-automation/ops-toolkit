@@ -3,7 +3,7 @@
 **Worker URL:** `https://stackabl-mcp.operations-dae.workers.dev`  
 **MCP endpoint:** `https://stackabl-mcp.operations-dae.workers.dev/mcp`  
 **Protocol:** MCP Streamable HTTP transport, version `2025-03-26`  
-**Phase:** 1 — read-only. Six tools. No write operations of any kind.
+**Phase:** 1 — read-only. Seven tools. No write operations of any kind.
 
 ---
 
@@ -133,7 +133,7 @@ Returns `405 Method Not Allowed`. SSE server-push not implemented.
 ### MCP methods supported
 - `initialize` → returns capabilities
 - `notifications/initialized` → 202 Accepted
-- `tools/list` → returns all 6 tools
+- `tools/list` → returns all 7 tools
 - `tools/call` → dispatches to tool implementation
 - `ping` → returns `{}`
 
@@ -450,6 +450,70 @@ Cached 5 min.
   "website": "https://filzfelt.com"
 }
 ```
+
+---
+
+### 7. `aligni_introspect`
+
+**Description:** Inspect Aligni's GraphQL schema. Use `describe_type` to see a specific
+type's fields, inputs, or enum values. Use `find_in_schema` to search for types, mutations,
+or queries by name substring. Read-only — does not fetch live data. Useful for confirming
+mutation shapes and field names before writing tools that call them.
+
+Full spec: `tools/aligni-introspect-spec.md`
+
+**Input schema:**
+```json
+{
+  "type": "object",
+  "properties": {
+    "op":       { "type": "string", "enum": ["describe_type", "find_in_schema"] },
+    "typeName": { "type": "string", "description": "Required for describe_type" },
+    "query":    { "type": "string", "description": "Required for find_in_schema" }
+  },
+  "required": ["op"]
+}
+```
+
+**Operations:**
+
+`describe_type` — fetches the full schema via standard `__schema` introspection and
+returns the named type's kind, description, fields, inputFields, enumValues, and
+possibleTypes (whichever apply to that kind). Case-insensitive type name lookup.
+
+`find_in_schema` — case-insensitive substring search across all type names, root query
+field names, and root mutation field names. GraphQL built-in types (`__Type` etc.) are
+excluded. Returns an empty `matches` array (not an error) when nothing matches.
+
+**Output shapes:**
+```json
+// describe_type
+{
+  "name": "Part",
+  "kind": "OBJECT",
+  "description": "the most connected entity in Aligni",
+  "fields": [ { "name": "id", "description": null, "args": [], "type": { ... } } ],
+  "inputFields": null,
+  "enumValues": null,
+  "possibleTypes": null
+}
+
+// find_in_schema
+{
+  "query": "vendor",
+  "matches": [
+    { "match": "Vendor",       "kind": "type",     "summary": "object type" },
+    { "match": "vendorCreate", "kind": "mutation",  "summary": "" },
+    { "match": "vendor",       "kind": "query",     "summary": "" }
+  ]
+}
+```
+
+**Caching:** Schema fetched once per request via `aligniGql`, cached in a local variable
+for that invocation. Not persisted across requests.
+
+**Rate limit:** Counts as one Aligni API call; subject to the same 6100ms throttle as
+all other tools.
 
 ---
 
