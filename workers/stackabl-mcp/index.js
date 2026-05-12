@@ -14,6 +14,29 @@ const SERVER_VERSION = '1.0.0';
 // Single-user — we don't actually issue distinct clients.
 const CLIENT_ID = 'stackabl-ops-agent-1';
 
+// Standard GraphQL introspection query — fetches everything needed for describe_type
+// and find_in_schema in a single round trip. Does not use fragments (inlined for clarity).
+const INTROSPECTION_QUERY = `{
+  __schema {
+    queryType { name }
+    mutationType { name }
+    types {
+      name kind description
+      fields(includeDeprecated: false) {
+        name description
+        args { name description type { kind name ofType { kind name ofType { kind name } } } }
+        type { kind name ofType { kind name ofType { kind name } } }
+      }
+      inputFields {
+        name description
+        type { kind name ofType { kind name ofType { kind name } } }
+      }
+      enumValues(includeDeprecated: false) { name description }
+      possibleTypes { name kind }
+    }
+  }
+}`;
+
 // ── Module-level state (persists within a warm isolate) ────────────────────────
 let _lastAligniCallAt = 0;
 let _vendorsCache = null,      _vendorsCacheAt = 0;
@@ -407,6 +430,82 @@ async function toolSearchManufacturers(args, token) {
     }));
 }
 
+async function toolAligniIntrospect(args, token) {
+  const { op, typeName, query } = args;
+  if (!op) {
+    throw { code: 'MISSING_INPUT', message: 'op is required: "describe_type" or "find_in_schema"' };
+  }
+
+  // Per-request schema cache: fetch once, reuse within this call.
+  // Not persisted across requests — schema is re-fetched each invocation.
+  let _schema = null;
+  const getSchema = async () => {
+    if (_schema) return _schema;
+    const data = await aligniGql(token, INTROSPECTION_QUERY);
+    _schema = data.__schema;
+    return _schema;
+  };
+
+  if (op === 'describe_type') {
+    if (!typeName) throw { code: 'MISSING_INPUT', message: 'typeName is required for describe_type' };
+    const schema = await getSchema();
+    const type = schema.types.find(t => t.name.toLowerCase() === typeName.toLowerCase());
+    if (!type) {
+      throw { code: 'NOT_FOUND', message: `Type not found in schema: ${typeName}` };
+    }
+    return {
+      name:         type.name,
+      kind:         type.kind,
+      description:  type.description ?? null,
+      fields:       type.fields?.length      ? type.fields       : null,
+      inputFields:  type.inputFields?.length  ? type.inputFields  : null,
+      enumValues:   type.enumValues?.length   ? type.enumValues   : null,
+      possibleTypes: type.possibleTypes?.length ? type.possibleTypes : null,
+    };
+  }
+
+  if (op === 'find_in_schema') {
+    if (query === undefined || query === null) {
+      throw { code: 'MISSING_INPUT', message: 'query is required for find_in_schema' };
+    }
+    const q = query.toLowerCase();
+    const schema = await getSchema();
+    const matches = [];
+
+    // Type names — skip GraphQL built-ins (__Type, __Field, etc.)
+    for (const t of schema.types) {
+      if (t.name.startsWith('__')) continue;
+      if (t.name.toLowerCase().includes(q)) {
+        matches.push({ match: t.name, kind: 'type', summary: t.description || `${t.kind.toLowerCase()} type` });
+      }
+    }
+
+    // Query field names
+    if (schema.queryType) {
+      const qt = schema.types.find(t => t.name === schema.queryType.name);
+      for (const f of qt?.fields ?? []) {
+        if (f.name.toLowerCase().includes(q)) {
+          matches.push({ match: f.name, kind: 'query', summary: f.description || '' });
+        }
+      }
+    }
+
+    // Mutation field names
+    if (schema.mutationType) {
+      const mt = schema.types.find(t => t.name === schema.mutationType.name);
+      for (const f of mt?.fields ?? []) {
+        if (f.name.toLowerCase().includes(q)) {
+          matches.push({ match: f.name, kind: 'mutation', summary: f.description || '' });
+        }
+      }
+    }
+
+    return { query, matches };
+  }
+
+  throw { code: 'INVALID_INPUT', message: `Unknown op: "${op}". Use "describe_type" or "find_in_schema"` };
+}
+
 // ── MCP tool registry ──────────────────────────────────────────────────────────
 const TOOLS = [
   {
@@ -475,6 +574,19 @@ const TOOLS = [
         query: { type: 'string', description: 'Substring to match in manufacturer names' },
       },
       required: ['query'],
+    },
+  },
+  {
+    name: 'aligni_introspect',
+    description: 'Inspect Aligni\'s GraphQL schema. Use describe_type to see a specific type\'s fields, inputs, or enum values. Use find_in_schema to search for types, mutations, or queries by name substring. Read-only — does not fetch live data. Useful for confirming mutation shapes and field names before writing tools that call them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        op:       { type: 'string', enum: ['describe_type', 'find_in_schema'], description: '"describe_type" to inspect a named type, or "find_in_schema" to search by name substring' },
+        typeName: { type: 'string', description: 'Type name to look up (required for describe_type)' },
+        query:    { type: 'string', description: 'Substring to search across type names, query fields, and mutation names (required for find_in_schema)' },
+      },
+      required: ['op'],
     },
   },
 ];
@@ -549,6 +661,7 @@ async function handleMcp(request, env) {
           case 'search_vendors':       result = await toolSearchVendors(args, tok);      break;
           case 'get_vendor':           result = await toolGetVendor(args, tok);          break;
           case 'search_manufacturers': result = await toolSearchManufacturers(args, tok); break;
+          case 'aligni_introspect':    result = await toolAligniIntrospect(args, tok);   break;
         }
         // If a rate-limit retry happened during this call, surface it so Claude mentions it
         if (_rateLimitNote) result = { _notice: _rateLimitNote, ...result };

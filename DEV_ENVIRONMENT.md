@@ -208,6 +208,41 @@ function esc(s) {
 
 ---
 
+## Migration Awareness
+
+There is an active Stacklab data migration running in a separate Claude project. A Stackabl
+migration is expected to follow once Stacklab is complete. Both reshape part master data,
+BOM structure, naming conventions, finishes, vendors, and drawings.
+
+Tools built here touch live Aligni. The migration and the ops toolkit are in different
+projects but share the same data, so what gets built here can make migration work harder
+if it's not migration-aware.
+
+**What's safe to build now:** Read-only tools are always safe. Tools that write transactional
+records — deviations, inventory adjustments, build operations — are also safe. These operate
+on operational state, not the master data being restructured by the migration.
+
+**What requires care:** Tools that write master data (creating parts, editing BOMs, defining
+finishes, creating manufacturers or vendors, setting up alternate-part relationships) are
+migration-adjacent. These touch the same structures the migration is reshaping. Build them
+with caution: prefer manual steps in chat or the Aligni UI until the migration's schema
+decisions are settled, or design them to be easy to update once the migration lands.
+
+Tools that embed part-naming or part-structure assumptions (hardcoded MPN patterns like
+`SA-CUT-DISC[5|8]-FT-`, for example) will need updating when naming conventions change.
+Keep those assumptions in named constants at the top of the file or in a small config
+block — not scattered through the logic — so post-migration cleanup is tractable.
+
+Generic-by-design tools survive migration better than family-specific ones. Where
+reasonable, build a primitive that works on any part type and put the family-specific
+logic in the caller (chat session, future UI, n8n workflow).
+
+**When in doubt:** If a new tool might conflict with migration decisions, ask before
+building. The migration project has its own context and the user is the bridge between
+the two projects. A five-minute check is cheaper than rework after the migration lands.
+
+---
+
 ## How to Build a New Tool
 
 1. Read this file
@@ -288,8 +323,6 @@ KV namespace `MCP_AUTH` must be created and IDs filled in `wrangler.toml` before
 - Aligni rate limit stuck at 10 req/min — support ticket open to activate 
   30/min plan entitlement. Once resolved, change IMPORT_DELAY in 
   tools/bom-importer.html line ~407 from 6100 to 2100.
-- tools/bom-importer-spec.md not yet created — Claude Code to generate 
-  on next session.
 - Full 37-file BOM batch not yet tested end-to-end — pending rate limit fix.
 
 ---
